@@ -1,0 +1,62 @@
+// Load the shapefile asset
+var myAsset = ee.FeatureCollection('projects/ee-monicashamurai/assets/RupnagarMap');
+
+// Print to check if it's loaded correctly
+print(myAsset);
+
+// Optionally, display on the map
+Map.centerObject(myAsset, 10);
+Map.addLayer(myAsset, {}, 'My Shapefile Layer');
+
+// Define the AOI for rupnagarDistrict by extracting the geometry
+var rupnagarDistrict = myAsset.geometry();  // Extract the combined geometry of all features
+
+// Load dataset and set parameters
+var dataset = ee.ImageCollection("NASA/SMAP/SPL3SMP_E/005")
+                .select('soil_moisture_am')
+                .filter(ee.Filter.date('2020-01-01', '2020-01-31'));
+var scale = 9000;
+var visualization = {
+  bands: 'soil_moisture_am',
+  min: 0.1,
+  max: 0.5,
+  palette: [
+    '000080', '0000d9', '4000ff', '8000ff', '0080ff', '00ffff',
+    '00ff80', '80ff00', 'daff00', 'ffff00', 'fff500', 'ffda00',
+    'ffb000', 'ffa400', 'ff4f00', 'ff2500', 'ff0a00', 'ff00ff',
+  ]
+};
+
+// Show the AOI with a blue outline
+Map.centerObject(rupnagarDistrict, 10);
+Map.addLayer(ee.Image().byte().paint({
+  featureCollection: ee.FeatureCollection([ee.Feature(rupnagarDistrict)]),
+  color: 1, width: 1
+}), {palette: ['blue']}, 'AOI');
+
+// Add soil moisture data layer to the map
+Map.addLayer(dataset, visualization, 'Soil Moisture Data');
+
+// Create and add a legend to the map
+var legendPanel = ui.Panel({style: {position: 'bottom-right', padding: '8px 15px'}});
+legendPanel.add(ui.Label('Soil Moisture Legend', {fontWeight: 'bold', fontSize: '16px', color: 'black'}));
+var values = [], palette = visualization.palette;
+for (var i = 0; i <= 10; i++) values.push((visualization.min + i / 10 * (visualization.max - visualization.min)).toFixed(2));
+for (var i = 0; i < palette.length; i++) {
+  legendPanel.add(ui.Panel([
+    ui.Label({style: {backgroundColor: '#' + palette[i], padding: '10px', margin: '2px'}}),
+    ui.Label(values[i], {margin: '2px'})
+  ], ui.Panel.Layout.Flow('horizontal')));
+}
+Map.add(legendPanel);
+
+// Chart soil moisture over time in rupnagarDistrict District
+var chart = ui.Chart.image.seriesByRegion({
+  imageCollection: dataset, 
+  regions: ee.FeatureCollection([ee.Feature(rupnagarDistrict)]),  // Use FeatureCollection of the geometry
+  reducer: ee.Reducer.mean(), 
+  band: 'soil_moisture_am', 
+  scale: scale, 
+  xProperty: 'system:time_start',
+});
+print(chart);
