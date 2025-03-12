@@ -1,0 +1,42 @@
+// Load the shapefile asset
+var myAsset = ee.FeatureCollection('projects/ee-monicashamurai/assets/RupnagarMap');
+
+// Print to check if it's loaded correctly
+print(myAsset);
+
+// Define the AOI for rupnagarDistrict by extracting the geometry
+var rupnagarDistrict = myAsset.geometry();  // Extract the combined geometry of all features
+
+// Load dataset and set parameters
+var dataset = ee.ImageCollection("NASA/SMAP/SPL3SMP_E/005")
+                .select('soil_moisture_am')
+                .filter(ee.Filter.date('2023-01-01', '2023-12-31')); // Specify date range
+var scale = 9000;
+
+// Visualization parameters
+var visualization = {
+  bands: 'soil_moisture_am',
+  min: 0.1,
+  max: 0.5,
+  palette: [
+    '000080', '0000d9', '4000ff', '8000ff', '0080ff', '00ffff',
+    '00ff80', '80ff00', 'daff00', 'ffff00', 'fff500', 'ffda00',
+    'ffb000', 'ffa400', 'ff4f00', 'ff2500', 'ff0a00', 'ff00ff',
+  ]
+};
+
+// Clip the soil moisture dataset to the region of interest (rupnagarDistrict)
+var clippedDataset = dataset.map(function(image) {
+  return image.clip(rupnagarDistrict);
+});
+
+// Display the clipped soil moisture data on the map
+Map.centerObject(rupnagarDistrict, 10); // Center map on the ROI
+Map.addLayer(clippedDataset.mean(), visualization, 'Clipped Soil Moisture Data');
+
+// Optionally, display the AOI (region of interest) on the map with a blue outline
+Map.addLayer(ee.Image().byte().paint({
+  featureCollection: ee.FeatureCollection([ee.Feature(rupnagarDistrict)]),
+  color: 1,
+  width: 2
+}), {palette: ['blue']}, 'AOI');
