@@ -1,0 +1,82 @@
+// Load the shapefile asset (Rupnagar District)
+var myAsset = ee.FeatureCollection('projects/ee-monicashamurai/assets/RupnagarMap');
+
+// Define the AOI (Area of Interest)
+var rupnagarDistrict = myAsset.geometry();
+
+// Load the soil moisture dataset (SMAP)
+var dataset = ee.ImageCollection("NASA/SMAP/SPL3SMP_E/005")
+                 .select('soil_moisture_am')  // Select the soil moisture band
+                 .filter(ee.Filter.date('2021-01-01', '2021-12-31')); // Filter for 2021
+
+// Clip the dataset to the Rupnagar district
+var clippedDataset = dataset.map(function(image) {
+  return image.clip(rupnagarDistrict);
+});
+
+// 🟢 Define seasonal periods (averaging soil moisture for each season)
+var winter = clippedDataset.filter(ee.Filter.date('2021-12-01', '2022-02-28')).mean();
+var summer = clippedDataset.filter(ee.Filter.date('2021-03-01', '2021-05-31')).mean();
+var monsoon = clippedDataset.filter(ee.Filter.date('2021-06-01', '2021-09-30')).mean();
+var postMonsoon = clippedDataset.filter(ee.Filter.date('2021-10-01', '2021-11-30')).mean();
+
+// Visualization parameters
+var visParams = {
+  min: 0.1,
+  max: 0.5,
+  palette: ['brown', 'yellow', 'green', 'blue']
+};
+
+// Add seasonal layers to the map
+Map.addLayer(winter, visParams, 'Winter Soil Moisture');
+Map.addLayer(summer, visParams, 'Summer Soil Moisture');
+Map.addLayer(monsoon, visParams, 'Monsoon Soil Moisture');
+Map.addLayer(postMonsoon, visParams, 'Post-Monsoon Soil Moisture');
+
+// Center the map on Rupnagar
+Map.centerObject(rupnagarDistrict, 10);
+
+// 🟢 Compute Mean Soil Moisture for Each Season in Rupnagar District
+var winterMean = winter.reduceRegion({
+  reducer: ee.Reducer.mean(),
+  geometry: rupnagarDistrict,
+  scale: 9000
+}).get('soil_moisture_am');
+
+var summerMean = summer.reduceRegion({
+  reducer: ee.Reducer.mean(),
+  geometry: rupnagarDistrict,
+  scale: 9000
+}).get('soil_moisture_am');
+
+var monsoonMean = monsoon.reduceRegion({
+  reducer: ee.Reducer.mean(),
+  geometry: rupnagarDistrict,
+  scale: 9000
+}).get('soil_moisture_am');
+
+var postMonsoonMean = postMonsoon.reduceRegion({
+  reducer: ee.Reducer.mean(),
+  geometry: rupnagarDistrict,
+  scale: 9000
+}).get('soil_moisture_am');
+
+// 🟢 Create a Chart for Seasonal Soil Moisture
+var chart = ui.Chart.array.values({
+  array: ee.Array([winterMean, summerMean, monsoonMean, postMonsoonMean]),
+  axis: 0
+})
+.setChartType('ColumnChart')
+.setOptions({
+  title: 'Seasonal Soil Moisture in Rupnagar (2021)',
+  hAxis: {
+    title: 'Seasons',
+    ticks: [{v: 0, f: 'Winter'}, {v: 1, f: 'Summer'}, {v: 2, f: 'Monsoon'}, {v: 3, f: 'Post-Monsoon'}]
+  },
+  vAxis: {title: 'Soil Moisture (cm³/cm³)'},
+  colors: ['blue'],
+  legend: 'none'
+});
+
+// Print the chart
+print(chart);
