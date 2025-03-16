@@ -1,0 +1,141 @@
+// Load the Panjab boundary
+var panjab = ee.FeatureCollection('projects/ee-monicashamurai/assets/Panjab');
+
+// Define seasons
+var seasons = [
+  {name: 'Winter', start: '2023-12-01', end: '2024-02-28'},
+  {name: 'Pre-monsoon', start: '2023-03-01', end: '2023-05-31'},
+  {name: 'Monsoon', start: '2023-06-01', end: '2023-09-30'},
+  {name: 'Post-monsoon', start: '2023-10-01', end: '2023-11-30'}
+];
+
+// Load CHIRPS Precipitation Data
+var chirps = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY")
+              .filterBounds(panjab)
+              .select('precipitation');
+
+// Load SMAP Soil Moisture Data (10 cm depth)
+var smap = ee.ImageCollection("NASA/SMAP/SPL3SMP_E/005")
+             .filterBounds(panjab)
+             .select('soil_moisture_am');
+
+// Function to compute seasonal values
+var computeSeasonalData = function(season) {
+  var start = ee.Date(season.start);
+  var end = ee.Date(season.end);
+  
+  var seasonPrecip = chirps.filterDate(start, end).sum().clip(panjab).rename('Precipitation');
+  var seasonMoisture = smap.filterDate(start, end).mean().clip(panjab).rename('Soil_Moisture_10cm');
+
+  return seasonPrecip.addBands(seasonMoisture)
+                     .set('season', season.name);
+};
+
+// Compute seasonal datasets
+var seasonalData = ee.ImageCollection(seasons.map(computeSeasonalData));
+
+// Define visualization parameters for soil moisture
+var moistureVis = {
+  min: 0.1, max: 0.5,
+  palette: ['brown', 'yellow', 'green', 'blue']
+};
+
+// Add seasonal maps to the display
+seasons.forEach(function(season) {
+  var seasonImage = seasonalData.filter(ee.Filter.eq('season', season.name)).first();
+  Map.addLayer(seasonImage.select('Soil_Moisture_10cm'), moistureVis, 'Soil Moisture - ' + season.name);
+});
+
+// Function to extract mean values for correlation
+var samplePoints = seasonalData.map(function(image) {
+  return image.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: panjab,
+    scale: 5000,
+    bestEffort: true
+  }).set('season', image.get('season'));
+});
+
+// Convert to FeatureCollection for plotting
+var sampleCollection = ee.FeatureCollection(samplePoints);
+
+// Time-Series Chart: Precipitation vs Soil Moisture
+var timeSeries = ui.Chart.feature.byFeature(sampleCollection, 'season', ['Precipitation', 'Soil_Moisture_10cm'])
+  .setChartType('ColumnChart')
+  .setOptions({
+    title: 'Seasonal Precipitation vs Soil Moisture (Panjab, India)',
+    hAxis: {title: 'Season'},
+    vAxis: {title: 'Value'},
+    series: {
+      0: {targetAxisIndex: 0, color: 'blue'},  // Precipitation
+      1: {targetAxisIndex: 1, color: 'green'}  // Soil Moisture
+    },
+    vAxes: {
+      0: {title: 'Precipitation (mm)'},
+      1: {title: 'Soil Moisture (m³/m³)'}
+    }
+  });
+
+print(timeSeries);
+
+// Scatter plot of Soil Moisture vs Precipitation
+var scatterPlot = ui.Chart.feature.byFeature(sampleCollection, 'Precipitation', 'Soil_Moisture_10cm')
+  .setChartType('ScatterChart')
+  .setOptions({
+    title: 'Soil Moisture vs Precipitation (Panjab, India)',
+    hAxis: {title: 'Precipitation (mm)'},
+    vAxis: {title: 'Soil Moisture (m³/m³)'},
+    trendlines: {0: {color: 'red', lineWidth: 2, opacity: 0.8}}, // Regression Line
+    pointSize: 5,
+    series: {0: {color: 'blue'}}
+  });
+
+print(scatterPlot);
+
+// Export seasonal data for QGIS
+Export.table.toDrive({
+  collection: sampleCollection,
+  description: 'Seasonal_Precipitation_SoilMoisture_Panjab',
+  fileFormat: 'CSV'
+});
+
+// Add Legend
+var legend = ui.Panel({
+  style: {
+    position: 'bottom-left',
+    padding: '8px 15px'
+  }
+});
+
+// Legend Title
+var legendTitle = ui.Label({
+  value: 'Soil Moisture (10cm Depth)',
+  style: {fontWeight: 'bold', fontSize: '14px', margin: '0 0 4px 0'}
+});
+legend.add(legendTitle);
+
+// Define colors and labels
+var colors = ['brown', 'yellow', 'green', 'blue'];
+var labels = ['Low (0.1)', 'Moderate (0.2)', 'High (0.3)', 'Very High (0.5)'];
+
+colors.forEach(function(color, index) {
+  var colorBox = ui.Label({
+    style: {
+      backgroundColor: color,
+      padding: '8px',
+      margin: '2px 0',
+      width: '20px'
+    }
+  });
+  var label = ui.Label({
+    value: labels[index],
+    style: {margin: '2px 0 0 6px'}
+  });
+  var row = ui.Panel({
+    widgets: [colorBox, label],
+    layout: ui.Panel.Layout.Flow('horizontal')
+  });
+  legend.add(row);
+});
+
+Map.add(legend);
