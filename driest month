@@ -1,0 +1,142 @@
+// Define Punjab boundary
+var punjab = ee.FeatureCollection('projects/ee-monicashamurai/assets/Panjab');
+
+// Load SMAP Soil Moisture Data (Morning Surface)
+var smap = ee.ImageCollection("NASA/SMAP/SPL3SMP_E/005")
+             .filterDate('2020-01-01', '2023-12-31')
+             .filterBounds(punjab)
+             .select('soil_moisture_am');
+
+// Function to calculate monthly mean soil moisture
+var monthlySMList = ee.List.sequence(1, 12).map(function(m) {
+    var monthSM = smap.filter(ee.Filter.calendarRange(m, m, 'month'))
+                      .mean()
+                      .reduceRegion({
+                        reducer: ee.Reducer.mean(),
+                        geometry: punjab,
+                        scale: 9000,
+                        maxPixels: 1e13
+                      })
+                      .get('soil_moisture_am');
+
+    return ee.Feature(null, { 'month': m, 'soil_moisture': monthSM });
+});
+
+// Convert List to FeatureCollection
+var monthlySMFC = ee.FeatureCollection(monthlySMList);
+
+// Find the driest month
+var driestMonth = monthlySMFC.sort('soil_moisture', true).first().get('month');
+
+// Print results
+print('✅ Monthly Soil Moisture Averages:', monthlySMFC);
+print('🌵 Driest Month:', driestMonth);
+
+
+// Convert driest month to integer
+var driestMonthInt = ee.Number(driestMonth).int();
+
+// Filter SMAP data for the driest month across all years
+var smapDriestMonth = smap.filter(ee.Filter.calendarRange(driestMonthInt, driestMonthInt, 'month'));
+
+// Compute daily soil moisture
+var dailySMList = smapDriestMonth.map(function(image) {
+  var meanValue = image.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: punjab,
+    scale: 9000,
+    maxPixels: 1e13
+  }).get('soil_moisture_am');
+
+  return ee.Feature(null, {
+    'date': image.date().format('YYYY-MM-dd'),
+    'soil_moisture': meanValue
+  });
+});
+
+// Convert List to FeatureCollection
+var dailySMFC = ee.FeatureCollection(dailySMList);
+
+// Display Chart: Daily Soil Moisture Trend for the Driest Month
+var chart = ui.Chart.feature.byFeature(dailySMFC, 'date', 'soil_moisture')
+              .setOptions({
+                title: '🌵 Daily Soil Moisture Trend - Driest Month in Punjab (2020-2023)',
+                hAxis: { title: 'Date', format: 'YYYY-MM-dd', gridlines: {count: 10} },
+                vAxis: { title: 'Soil Moisture (m³/m³)', minValue: 0, maxValue: 0.5 },
+                lineWidth: 2,
+                pointSize: 4,
+                series: { 0: { color: 'red' } }
+              });
+
+// Print chart
+print(chart);
+// Define Punjab boundary
+var punjab = ee.FeatureCollection('projects/ee-monicashamurai/assets/Panjab');
+
+// Load SMAP Soil Moisture Data (Morning Surface)
+var smap = ee.ImageCollection("NASA/SMAP/SPL3SMP_E/005")
+             .filterDate('2020-01-01', '2023-12-31')
+             .filterBounds(punjab)
+             .select('soil_moisture_am');
+
+// Function to compute monthly mean soil moisture
+var monthlySMList = ee.List.sequence(1, 12).map(function(m) {
+    var monthSM = smap.filter(ee.Filter.calendarRange(m, m, 'month'))
+                      .mean()
+                      .reduceRegion({
+                        reducer: ee.Reducer.mean(),
+                        geometry: punjab,
+                        scale: 9000,
+                        maxPixels: 1e13
+                      })
+                      .get('soil_moisture_am');
+
+    return ee.Feature(null, { 'month': m, 'soil_moisture': monthSM });
+});
+
+// Convert list to FeatureCollection
+var monthlySMFC = ee.FeatureCollection(monthlySMList);
+
+// Identify driest month
+var driestMonth = monthlySMFC.sort('soil_moisture', true).first().get('month');
+var driestMonthInt = ee.Number(driestMonth).int();
+
+// Filter SMAP for the driest month
+var smapDriestMonth = smap.filter(ee.Filter.calendarRange(driestMonthInt, driestMonthInt, 'month'));
+
+// Process daily soil moisture only where measurements exist
+var dailySMList = smapDriestMonth.map(function(image) {
+  var date = image.date().format('YYYY-MM-dd');
+
+  var meanValue = image.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: punjab,
+    scale: 9000,
+    maxPixels: 1e13
+  }).get('soil_moisture_am');
+
+  return ee.Feature(null, { 'date': date, 'soil_moisture': meanValue });
+});
+
+// Convert List to FeatureCollection
+var dailySMFC = ee.FeatureCollection(dailySMList).filter(ee.Filter.notNull(['soil_moisture']));
+
+// 🌟 Continuous Line Graph for Observed Days Only
+var chart = ui.Chart.feature.byFeature({
+  features: dailySMFC,
+  xProperty: 'date',
+  yProperties: ['soil_moisture']
+})
+.setChartType('LineChart')  // 🔹 Ensures continuous line
+.setOptions({
+  title: '📊 Daily Soil Moisture Trend (Driest Month, Punjab)',
+  hAxis: { title: 'Date', format: 'YYYY-MM-dd', gridlines: {count: 10}, slantedText: true, slantedTextAngle: 45 },
+  vAxis: { title: 'Soil Moisture (m³/m³)', minValue: 0, maxValue: 0.5 },
+  lineWidth: 3,  // 🔹 Smooth thick line
+  pointSize: 2,   // 🔹 Highlight points
+  interpolateNulls: false, // 🔹 Removes gaps in missing data
+  series: { 0: { color: 'blue', lineWidth: 3 } } 
+});
+
+// Print chart
+print(chart);
