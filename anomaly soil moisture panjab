@@ -1,0 +1,65 @@
+// Load Punjab boundary
+var panjab = ee.FeatureCollection('projects/ee-monicashamurai/assets/Panjab');
+
+// Load SMAP Soil Moisture Data (5 cm depth)
+var smap = ee.ImageCollection("NASA/SMAP/SPL3SMP_E/005")
+             .filterBounds(panjab)
+             .select('soil_moisture_am');  // Morning soil moisture (5 cm depth)
+
+// Define the long-term period (2015-2023)
+var longTermStart = '2015-04-01';
+var longTermEnd = '2023-12-31';
+
+// Compute the long-term average soil moisture (baseline)
+var longTermMean = smap.filterDate(longTermStart, longTermEnd)
+                       .mean()
+                       .clip(panjab)
+                       .rename('Long_Term_Mean');
+
+// Define the anomaly function: deviation from long-term mean
+var computeAnomaly = function(image) {
+  return image.subtract(longTermMean)
+              .rename('Soil_Moisture_Anomaly')
+              .set('system:time_start', image.get('system:time_start'));
+};
+
+// Compute anomalies for recent years (2023-2024)
+var anomalyCollection = smap.filterDate('2023-01-01', '2024-12-31')
+                            .map(computeAnomaly);
+
+// Visualization parameters (Red = Dry, Blue = Wet)
+var anomalyVis = {
+  min: -0.1, max: 0.1,  // Adjust range based on data variation
+  palette: ['red', 'yellow', 'white', 'cyan', 'blue']
+};
+
+// Add layers to the map for different months
+var months = ee.List.sequence(1, 12);
+months.evaluate(function(monthList) {
+  monthList.forEach(function(m) {
+    var month = ee.Number(m);
+    var monthlyAnomaly = anomalyCollection
+                          .filter(ee.Filter.calendarRange(month, month, 'month'))
+                          .mean()
+                          .clip(panjab);
+    
+    Map.addLayer(monthlyAnomaly, anomalyVis, 'Soil Moisture Anomaly - Month ' + month.getInfo());
+  });
+});
+
+// Export Soil Moisture Anomaly Maps as GeoTIFF
+var exportAnomaly = anomalyCollection.mean().clip(panjab);
+
+Export.image.toDrive({
+  image: exportAnomaly,
+  description: 'Punjab_Soil_Moisture_Anomaly_2023',
+  folder: 'GEE_Exports',
+  scale: 5000,
+  region: panjab.geometry(),
+  fileFormat: 'GeoTIFF',
+  maxPixels: 1e13
+});
+
+// Print confirmation
+print(anomalyCollection, 'Soil Moisture Anomaly Collection');
+
