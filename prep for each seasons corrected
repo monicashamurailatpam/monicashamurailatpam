@@ -1,0 +1,59 @@
+// Load the Panjab boundary from an asset
+var panjab = ee.FeatureCollection('projects/ee-monicashamurai/assets/Panjab');
+
+// Load CHIRPS Daily Precipitation Data
+var chirps = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY")
+              .filterDate('2023-01-01', '2023-12-31')
+              .filterBounds(panjab)
+              .select('precipitation');
+
+// Define seasons with corrected date ranges
+var seasons = {
+  'Winter': ['2022-12-01', '2023-02-28'],
+  'Pre-Monsoon': ['2023-03-01', '2023-05-31'],
+  'Monsoon': ['2023-06-01', '2023-09-30'],
+  'Post-Monsoon': ['2023-10-01', '2023-11-30']
+};
+
+// Function to compute total precipitation for a given season
+function computeSeasonalPrecip(season, dates) {
+  var seasonPrecip = chirps.filterDate(dates[0], dates[1]).sum().clip(panjab);
+  Map.addLayer(seasonPrecip, visParams, season + ' Precipitation');
+  return seasonPrecip;
+}
+
+// Visualization Parameters
+var visParams = {
+  min: 0,
+  max: 1000,
+  palette: ['red', 'orange', 'yellow', 'green', 'blue', 'purple']
+};
+
+// Compute and display seasonal precipitation
+var seasonalPrecip = {};
+for (var season in seasons) {
+  seasonalPrecip[season] = computeSeasonalPrecip(season, seasons[season]);
+}
+
+// Show the boundary on the map
+Map.centerObject(panjab, 7);
+Map.addLayer(panjab, {color: 'black'}, 'Panjab Boundary');
+
+// Create a Legend Panel
+var legend = ui.Panel({style: {position: 'bottom-right', padding: '8px', backgroundColor: 'white'}});
+legend.add(ui.Label('Total Precipitation (mm)', {fontWeight: 'bold'}));
+
+// Define mm value breaks and colors
+var mmValues = ['0 mm', '250 mm', '500 mm', '750 mm', '1000 mm+'];
+var colors = ['red', 'orange', 'yellow', 'green', 'purple'];
+
+// Add color bars and labels to the legend
+for (var i = 0; i < colors.length; i++) {
+  legend.add(ui.Panel([
+    ui.Label({style: {backgroundColor: colors[i], padding: '10px', margin: '2px'}}),
+    ui.Label(mmValues[i], {margin: '4px 8px'})
+  ], ui.Panel.Layout.flow('horizontal')));
+}
+
+// Add the legend to the map
+Map.add(legend);
