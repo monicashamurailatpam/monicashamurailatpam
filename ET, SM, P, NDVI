@@ -1,0 +1,97 @@
+// Load Punjab boundary
+var panjab = ee.FeatureCollection('projects/ee-monicashamurai/assets/Panjab');
+
+// Define seasons with start and end dates
+var seasons = [
+  {name: 'Winter', start: '2022-12-01', end: '2023-02-28'},
+  {name: 'Pre-Monsoon', start: '2023-03-01', end: '2023-05-31'},
+  {name: 'Monsoon', start: '2023-06-01', end: '2023-09-30'},
+  {name: 'Post-Monsoon', start: '2023-10-01', end: '2023-11-30'}
+];
+
+// Load SMAP Soil Moisture Data (5 cm depth)
+var smap = ee.ImageCollection("NASA/SMAP/SPL3SMP_E/005")
+             .filterBounds(panjab)
+             .select('soil_moisture_am');
+
+// Load MODIS Evapotranspiration Data
+var et = ee.ImageCollection('MODIS/061/MOD16A2')
+           .filterBounds(panjab)
+           .select('ET');
+
+// Load MODIS NDVI Data
+var ndvi = ee.ImageCollection("MODIS/061/MOD13Q1")
+             .filterBounds(panjab)
+             .select('NDVI');
+
+// Load CHIRPS Daily Precipitation Data
+var chirps = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY")
+              .filterBounds(panjab)
+              .select('precipitation');
+
+// Function to compute seasonal averages
+var computeSeasonalData = function(season) {
+  var start = ee.Date(season.start);
+  var end = ee.Date(season.end);
+
+  var seasonalSM = smap.filterDate(start, end).mean().clip(panjab);
+  var seasonalET = et.filterDate(start, end).mean().clip(panjab);
+  var seasonalNDVI = ndvi.filterDate(start, end).mean().clip(panjab);
+  var seasonalPrecip = chirps.filterDate(start, end).sum().clip(panjab);
+
+  return seasonalSM.addBands(seasonalET).addBands(seasonalNDVI).addBands(seasonalPrecip)
+         .set('season', season.name);
+};
+
+// Compute seasonal images
+var seasonalImages = ee.ImageCollection(seasons.map(computeSeasonalData));
+
+// Visualization Parameters
+var visSM = { min: 0.05, max: 0.4, palette: ['red', 'yellow', 'green'] };
+var visET = { min: 0, max: 100, palette: ['blue', 'cyan', 'white'] };
+var visNDVI = { min: 0, max: 8000, palette: ['brown', 'yellow', 'green'] };
+var visPrecip = { min: 0, max: 1000, palette: ['red', 'orange', 'yellow', 'green', 'blue', 'purple'] };
+
+// Add layers to Map
+seasons.forEach(function(season) {
+  var seasonImage = seasonalImages.filter(ee.Filter.eq('season', season.name)).first();
+  
+  Map.addLayer(seasonImage.select('soil_moisture_am'), visSM, season.name + " Soil Moisture");
+  Map.addLayer(seasonImage.select('ET'), visET, season.name + " Evapotranspiration");
+  Map.addLayer(seasonImage.select('NDVI'), visNDVI, season.name + " NDVI");
+  Map.addLayer(seasonImage.select('precipitation'), visPrecip, season.name + " Precipitation");
+});
+
+// Center the map over Punjab
+Map.centerObject(panjab, 7);
+
+// Function to Add Legend with Explicit Values
+function addLegend(title, palette, minLabel, midLabels, maxLabel) {
+  var legend = ui.Panel({ style: { position: 'bottom-right', padding: '8px 15px' } });
+
+  legend.add(ui.Label({ value: title, style: { fontWeight: 'bold', fontSize: '14px' } }));
+
+  var gradient = ui.Thumbnail({
+    image: ee.Image.pixelLonLat().select(0).multiply(5000), // Adjust to match max value
+    params: { bbox: [0, 0, 1, 0.1], dimensions: '100x10', palette: palette }
+  });
+
+  legend.add(gradient);
+
+  var labels = [minLabel].concat(midLabels).concat([maxLabel]);
+
+  legend.add(ui.Panel({
+    widgets: labels.map(function(label) {
+      return ui.Label({ value: label, style: { fontSize: '10px', margin: '2px 4px' } });
+    }),
+    layout: ui.Panel.Layout.flow('horizontal')
+  }));
+
+  Map.add(legend);
+}
+
+// Add Legends
+addLegend("Soil Moisture (m³/m³)", visSM.palette, "0.05", ["0.15", "0.25", "0.35"], "0.40");
+addLegend("Evapotranspiration (mm)", visET.palette, "0", ["25", "50", "75"], "100");
+addLegend("NDVI", visNDVI.palette, "0", ["2000", "4000", "6000"], "8000");
+addLegend("Precipitation (mm)", visPrecip.palette, "0", ["250", "500", "750"], "1000");
